@@ -12,10 +12,9 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
-import re
+from lib import helpers
 from resolveurl import common
 from resolveurl.resolver import ResolveUrl, ResolverError
-from lib import jsunpack
 
 
 class VideoMegaResolver(ResolveUrl):
@@ -29,15 +28,19 @@ class VideoMegaResolver(ResolveUrl):
     def get_media_url(self, host, media_id):
         web_url = self.get_url(host, media_id)
         headers = {'User-Agent': common.RAND_UA}
-        html = self.net.http_GET(web_url, headers=headers).content
-
-        try:
-            r = re.search('\s+?(eval\(function\(p,a,c,k,e,d\).+)\s+?', html)
-            r = jsunpack.unpack(r.group(1))
-            r = re.search('file":"([^"]+)', r)
-            return r.group(1)
-        except:
-            raise ResolverError("Video not found")
+        response = self.net.http_GET(web_url, headers=headers)
+        response_headers = response.get_headers(as_dict=True)
+        cookies = response_headers.get('Set-Cookie')
+        cookie = ''
+        for ck in cookies.split('Only, '):
+            cookie += ck.split(';')[0] + '; '
+        headers.update({'Cookie': cookie[:-2],
+                        'Referer': web_url})
+        html = self.net.http_GET('https://{}/js/{}'.format(host, media_id), headers=headers).content
+        sources = helpers.scrape_sources(html)
+        if sources:
+            return helpers.pick_source(sources) + helpers.append_headers(headers)
+        raise ResolverError("Video not found")
 
 
     def get_url(self, host, media_id):
